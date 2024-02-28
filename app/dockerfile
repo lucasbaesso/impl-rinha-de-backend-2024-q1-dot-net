@@ -1,0 +1,23 @@
+# Use the official Alpine image as the base image
+FROM ubuntu:22.04
+
+# Create /app directory
+RUN mkdir /app
+
+# Copy the necessary files to the container
+COPY ./bin/Release/net8.0/linux-x64/publish/ /app/
+
+# make the binary executable
+RUN chmod +x /app/rinha-dot-net-aot
+
+# Set the working directory
+WORKDIR /app
+
+# Expose the port
+EXPOSE 9000
+
+# LIST the files in the / directory
+# CMD [ "ls", "./" ]
+
+# Set the entrypoint
+ENTRYPOINT [ "./rinha-dot-net-aot" ]

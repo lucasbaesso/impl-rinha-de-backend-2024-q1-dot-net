@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+https://go.microsoft.com/fwlink/?LinkID=208121.
+-->
+<Project>
+  <PropertyGroup>
+    <_PublishTargetUrl>C:\Users\lucas\source\repos\rinha-dot-net-aot\bin\Release\net8.0\publish\</_PublishTargetUrl>
+    <History>True|2024-02-24T11:58:16.3945652Z;False|2024-02-24T12:57:11.5559487+01:00;False|2024-02-24T12:56:43.5998691+01:00;True|2024-02-22T10:30:42.3244959+01:00;False|2024-02-22T10:29:38.3173990+01:00;</History>
+    <LastFailureDetails />
+  </PropertyGroup>
+</Project>
