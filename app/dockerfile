@@ -1,23 +1,19 @@
-# Use the official Alpine image as the base image
-FROM ubuntu:22.04
-
-# Create /app directory
-RUN mkdir /app
-
-# Copy the necessary files to the container
-COPY ./bin/Release/net8.0/linux-x64/publish/ /app/
-
-# make the binary executable
-RUN chmod +x /app/rinha-dot-net-aot
-
-# Set the working directory
+FROM mcr.microsoft.com/dotnet/runtime:8.0 AS base
 WORKDIR /app
 
-# Expose the port
-EXPOSE 9000
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+RUN apt-get update && apt-get install -y clang zlib1g-dev
+COPY ["rinha-dot-net-aot.csproj", ""]
+RUN dotnet restore "./rinha-dot-net-aot.csproj"
+COPY . .
+WORKDIR "/src/."
+RUN dotnet build "rinha-dot-net-aot.csproj" -c Release -o /app/build
 
-# LIST the files in the / directory
-# CMD [ "ls", "./" ]
+FROM build AS publish
+RUN dotnet publish "rinha-dot-net-aot.csproj" -c Release -o /app/publish
 
-# Set the entrypoint
-ENTRYPOINT [ "./rinha-dot-net-aot" ]
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
+ENTRYPOINT ["./rinha-dot-net-aot"]

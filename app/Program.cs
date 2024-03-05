@@ -4,11 +4,6 @@ using System.Text.Json.Serialization;
 using static rinhaDotNetAot.Dto.ExtratoResponse;
 using Npgsql;
 
-// int minWorker, minIOC;
-// ThreadPool.GetMinThreads(out minWorker, out minIOC);
-// minWorker = 4;
-// ThreadPool.SetMinThreads(minWorker, minIOC);
-
 var builder = WebApplication.CreateSlimBuilder(args);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -43,15 +38,15 @@ while (!dbUp)
     {
         using (var conn = new NpgsqlConnection(connectionString))
         {
-            await conn.OpenAsync();
-            await conn.CloseAsync();
+            conn.Open();
+            conn.Close();
             dbUp = true;
         }
     }
     catch (Exception)
     {
-        Console.WriteLine("Database is not up yet, waiting 1 second");
-        Thread.Sleep(1000);
+        Console.WriteLine("Database is not up yet, waiting 500 ms...");
+        Thread.Sleep(500);
     }
 }
 
@@ -60,13 +55,13 @@ List<NpgsqlConnection> connections = new List<NpgsqlConnection>();
 for (int i = 0; i < DB_MIN_POOL_SIZE; i++)
 {
     var conn = new NpgsqlConnection(connectionString);
-    await conn.OpenAsync();
+    conn.Open();
     connections.Add(conn);
 }
 
 foreach (var conn in connections)
 {
-    await conn.CloseAsync();
+    conn.Close();
 }
 
 
@@ -101,7 +96,7 @@ clientesApi.MapGet("/{id:required}/extrato", async (int id) =>
 
         using var cmd = new NpgsqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("id", id);
-        cmd.Prepare();
+        await cmd.PrepareAsync().ConfigureAwait(false);
         using var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false);
         while (await reader.ReadAsync().ConfigureAwait(false))
         {
@@ -178,7 +173,7 @@ clientesApi.MapPost("/{id:required}/transacoes", async (int id, TransacaoRequest
         cmd.Parameters.AddWithValue("tipo", tipo);
         cmd.Parameters.AddWithValue("descricao", descricao);
 
-        await cmd.PrepareAsync();
+        await cmd.PrepareAsync().ConfigureAwait(false);
 
         using var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false);
         if (await reader.ReadAsync().ConfigureAwait(false))
