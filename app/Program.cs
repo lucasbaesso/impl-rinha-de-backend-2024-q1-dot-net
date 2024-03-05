@@ -160,27 +160,24 @@ clientesApi.MapPost("/{id:required}/transacoes", async (int id, TransacaoRequest
                     FROM updated
                     RETURNING ultimolimite, ultimosaldo;";
 
-    TransacaoResponse response;
-    using (var conn = new NpgsqlConnection(connectionString))
+    using var conn = new NpgsqlConnection(connectionString);
+    await conn.OpenAsync().ConfigureAwait(false);
+    using var cmd = new NpgsqlCommand(sql, conn);
+    cmd.Parameters.AddWithValue("id", id);
+    cmd.Parameters.AddWithValue("valor", valor);
+    cmd.Parameters.AddWithValue("tipo", tipo);
+    cmd.Parameters.AddWithValue("descricao", descricao);
+
+    await cmd.PrepareAsync().ConfigureAwait(false);
+
+    using var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false);
+    if (await reader.ReadAsync().ConfigureAwait(false))
     {
-        await conn.OpenAsync().ConfigureAwait(false);
-        using var cmd = new NpgsqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("id", id);
-        cmd.Parameters.AddWithValue("valor", valor);
-        cmd.Parameters.AddWithValue("tipo", tipo);
-        cmd.Parameters.AddWithValue("descricao", descricao);
-
-        await cmd.PrepareAsync().ConfigureAwait(false);
-
-        using var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false);
-        if (await reader.ReadAsync().ConfigureAwait(false))
-        {
-            return Results.Ok(new TransacaoResponse(reader.GetInt32(0), reader.GetInt32(1)));
-        }
-        else
-        {
-            return Results.UnprocessableEntity("Limite excedido");
-        }
+        return Results.Ok(new TransacaoResponse(reader.GetInt32(0), reader.GetInt32(1)));
+    }
+    else
+    {
+        return Results.UnprocessableEntity("Limite excedido");
     }
 });
 
