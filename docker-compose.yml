@@ -23,7 +23,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.34"
+          cpus: "0.37"
           memory: "110MB"
 
   app2:
@@ -54,7 +54,7 @@ services:
       resources:
         limits:
           cpus: "0.26"
-          memory: "20MB"
+          memory: "40MB"
 
   postgres:
     container_name: postgres
@@ -71,11 +71,11 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready"]
       interval: 5s
-      timeout: 10s
+      timeout: 5s
       start_period: 5s
       retries: 3
     deploy:
       resources:
         limits:
-          cpus: "0.56"
-          memory: "310MB"
+          cpus: "0.50"
+          memory: "290MB"

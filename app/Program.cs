@@ -118,10 +118,7 @@ clientesApi.MapGet("/{id:required}/extrato", async (int id) =>
     {
         return Results.NotFound();
     }
-    var response = new ExtratoResponse(transacoes);
-
-    return Results.Ok(response);
-
+    return Results.Ok(new ExtratoResponse(transacoes));
 });
 
 clientesApi.MapPost("/{id:required}/transacoes", async (int id, TransacaoRequest request) =>
@@ -178,19 +175,13 @@ clientesApi.MapPost("/{id:required}/transacoes", async (int id, TransacaoRequest
         using var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false);
         if (await reader.ReadAsync().ConfigureAwait(false))
         {
-            response = new TransacaoResponse(id, true, reader.GetInt32(0), reader.GetInt32(1));
+            return Results.Ok(new TransacaoResponse(reader.GetInt32(0), reader.GetInt32(1)));
         }
         else
         {
-            response = new TransacaoResponse(id, false, 0, 0);
+            return Results.UnprocessableEntity("Limite excedido");
         }
     }
-    if (!response.Ok)
-    {
-        return Results.UnprocessableEntity("Limite excedido");
-    }
-
-    return Results.Ok(response);
 });
 
 app.Run();
