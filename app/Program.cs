@@ -3,6 +3,7 @@ using rinhaDotNetAot.Data;
 using System.Text.Json.Serialization;
 using static rinhaDotNetAot.Dto.ExtratoResponse;
 using Npgsql;
+using System.Diagnostics;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -36,12 +37,10 @@ while (!dbUp)
 {
     try
     {
-        using (var conn = new NpgsqlConnection(connectionString))
-        {
-            conn.Open();
-            conn.Close();
-            dbUp = true;
-        }
+        using var conn = new NpgsqlConnection(connectionString);
+        conn.Open();
+        conn.Close();
+        dbUp = true;
     }
     catch (Exception)
     {
@@ -50,7 +49,7 @@ while (!dbUp)
     }
 }
 
-// do a loop of 0 to size DB_MIN_POOL_SIZE and open and close a connection
+// warmup
 List<NpgsqlConnection> connections = new List<NpgsqlConnection>();
 for (int i = 0; i < DB_MIN_POOL_SIZE; i++)
 {
@@ -63,15 +62,20 @@ foreach (var conn in connections)
 {
     conn.Close();
 }
+List<int> ids = getIds();
+foreach (var id in ids)
+{
+    InsertTransacao(id, 1, 'c', "warmup");
+}
+ResetDatabase();
 
 
 var clientesApi = app.MapGroup("/clientes");
 
-clientesApi.MapGet("/{id:required}/extrato", async (int id) =>
+clientesApi.MapGet("/{id:required}/extrato", (int id) =>
 {
-
     // Console.WriteLine($"Extrato at {DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")} - ID:{id}");
-    // return Results.Ok();
+    // var stopwatch = Stopwatch.StartNew();
 
     var sql = @"SELECT 
                     clienteId,
@@ -92,13 +96,13 @@ clientesApi.MapGet("/{id:required}/extrato", async (int id) =>
 
     using (var conn = new NpgsqlConnection(connectionString))
     {
-        await conn.OpenAsync().ConfigureAwait(false);
+        conn.Open();
 
         using var cmd = new NpgsqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("id", id);
-        await cmd.PrepareAsync().ConfigureAwait(false);
-        using var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false);
-        while (await reader.ReadAsync().ConfigureAwait(false))
+        cmd.Prepare();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
         {
             var transacao = new TransacaoRecord(
                 reader.GetInt32(0),
@@ -114,6 +118,8 @@ clientesApi.MapGet("/{id:required}/extrato", async (int id) =>
             transacoes.Add(transacao);
         }
     }
+    // stopwatch.Stop();
+    // Console.WriteLine($"Execution time: {stopwatch.Elapsed.TotalMilliseconds:F3} ms");
     if (transacoes.Count == 0)
     {
         return Results.NotFound();
@@ -121,12 +127,12 @@ clientesApi.MapGet("/{id:required}/extrato", async (int id) =>
     return Results.Ok(new ExtratoResponse(transacoes));
 });
 
-clientesApi.MapPost("/{id:required}/transacoes", async (int id, TransacaoRequest request) =>
+clientesApi.MapPost("/{id:required}/transacoes", (int id, TransacaoRequest request) =>
 {
     // Console.WriteLine($"Transacoes at {DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")} - ID:{id}");
-    // return Results.Ok();
+    // var stopwatch = Stopwatch.StartNew();
 
-    if(request == null)
+    if (request == null)
     {
         return Results.UnprocessableEntity("Invalid request");
     }
@@ -145,12 +151,28 @@ clientesApi.MapPost("/{id:required}/transacoes", async (int id, TransacaoRequest
         return Results.UnprocessableEntity("Tipo must be 'd' or 'c'");
     }
     //descricao must be between 1 and 10 characters
-    if (string.IsNullOrEmpty(descricao)  || descricao.Length > 10)
+    if (string.IsNullOrEmpty(descricao) || descricao.Length > 10)
     {
         return Results.UnprocessableEntity("Descricao must be between 1 and 10 characters");
     }
 
-    var updateSql = tipo.Equals('c') 
+    TransacaoResponse? transacao = InsertTransacao(id, valor, tipo, descricao);
+
+    // stopwatch.Stop();
+    // Console.WriteLine($"Execution time: {stopwatch.Elapsed.TotalMilliseconds:F3} ms");
+    if (transacao != null)
+    {
+        return Results.Ok(transacao);
+    }
+    else
+    {
+        return Results.UnprocessableEntity("Limite excedido");
+    }
+});
+
+TransacaoResponse? InsertTransacao(int id, int valor, char tipo, string descricao)
+{
+    var updateSql = tipo.Equals('c')
     ? "UPDATE clientes SET saldo = saldo + @valor WHERE id = @id RETURNING nome, saldo, limite"
     : "UPDATE clientes SET saldo = saldo - @valor WHERE id = @id AND saldo - @valor >= -limite RETURNING nome, saldo, limite";
 
@@ -161,25 +183,53 @@ clientesApi.MapPost("/{id:required}/transacoes", async (int id, TransacaoRequest
                     RETURNING ultimolimite, ultimosaldo;";
 
     using var conn = new NpgsqlConnection(connectionString);
-    await conn.OpenAsync().ConfigureAwait(false);
+    conn.Open();
     using var cmd = new NpgsqlCommand(sql, conn);
     cmd.Parameters.AddWithValue("id", id);
     cmd.Parameters.AddWithValue("valor", valor);
     cmd.Parameters.AddWithValue("tipo", tipo);
     cmd.Parameters.AddWithValue("descricao", descricao);
+    cmd.Prepare();
 
-    await cmd.PrepareAsync().ConfigureAwait(false);
+    using var reader = cmd.ExecuteReader();
+    if (reader.Read())
+    {
+        int limite = reader.GetInt32(0);
+        int saldo = reader.GetInt32(1);
+        conn.Close();
+        return new TransacaoResponse(limite, saldo);
+    }
+    conn.Close();
+    return null;
+}
 
-    using var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false);
-    if (await reader.ReadAsync().ConfigureAwait(false))
+void ResetDatabase()
+{
+    using var conn = new NpgsqlConnection(connectionString);
+    conn.Open();
+    var sqlDelete = new NpgsqlCommand("DELETE FROM transacoes; UPDATE clientes SET saldo = 0;", conn);
+    sqlDelete.ExecuteNonQuery();
+    var sqlInicial = new NpgsqlCommand(
+        "INSERT INTO transacoes (clienteid, valor, tipo, descricao, clientenome, ultimolimite, ultimosaldo) " +
+        "SELECT id, 0, 'c', 'inicial', nome, limite, saldo FROM clientes;", conn
+    );
+    sqlInicial.ExecuteNonQuery();
+    conn.Close();
+}
+
+List<int> getIds()
+{
+    using var conn = new NpgsqlConnection(connectionString);
+    conn.Open();
+    var sql = new NpgsqlCommand("SELECT id FROM clientes;", conn);
+    using var reader = sql.ExecuteReader();
+    List<int> ids = new List<int>();
+    while (reader.Read())
     {
-        return Results.Ok(new TransacaoResponse(reader.GetInt32(0), reader.GetInt32(1)));
+        ids.Add(reader.GetInt32(0));
     }
-    else
-    {
-        return Results.UnprocessableEntity("Limite excedido");
-    }
-});
+    return ids;
+}
 
 app.Run();
 
